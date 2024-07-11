@@ -169,7 +169,7 @@ const handleContainerDeploy = async (repoUrl, lastCommitHash, port, redeployment
     if (redeployment && redeployment === true) {
         checkRunName = "redeployment"
     }
-    // const deploymentCheckRunId = await createCheckRun(owner, repoName, lastCommitHash, checkRunName, 'in_progress')
+    const deploymentCheckRunId = await createCheckRun(owner, repoName, lastCommitHash, checkRunName, 'in_progress')
     const customRepoName = owner + "_" + repoName + "_" + lastCommitHash
     const foldersToDelete = findFoldersWithPrefix('../vagrant', owner + "_" + repoName);
     const hostName = customRepoName.replace(/_/g, '-')
@@ -197,7 +197,7 @@ const handleContainerDeploy = async (repoUrl, lastCommitHash, port, redeployment
 
 
 
-    // await updateCheckRun(owner, repoName, deploymentCheckRunId, 'in_progress')
+    await updateCheckRun(owner, repoName, deploymentCheckRunId, 'in_progress')
     const containerName = customRepoName
     const image = "beiuhori07/integrity-check"
     const hostPort = await runContainer(image, containerName, port);
@@ -215,7 +215,7 @@ const handleContainerDeploy = async (repoUrl, lastCommitHash, port, redeployment
         console.log("public url", publicURL)
     }
 
-    // await completeCheckRun(owner, repoName, deploymentCheckRunId, publicURL + "/log-timestamp")
+    await completeCheckRun(owner, repoName, deploymentCheckRunId, publicURL + "/log-timestamp")
     const serviceToRegister = {
         Name: customRepoName,
         Address: publicURL,
