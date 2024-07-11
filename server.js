@@ -16,7 +16,8 @@ dotenv.config();
 const BufferB = Buffer.Buffer;
 const privateKey = BufferB.from(process.env.GITHUB_PRIVATE_KEY, 'base64').toString('utf8');
 
-const CONSUL_BASE_URL = "http://192.168.0.165:8500" // todo: static ip - read it somehow?
+// const CONSUL_BASE_URL = "http://192.168.0.165:8500" // todo: static ip - read it somehow?
+const CONSUL_BASE_URL = "http://192.168.0.199:8500" // todo: static ip - read it somehow?
 const BROADCAST_ADDR = "192.168.0.255";
 
 
@@ -98,12 +99,11 @@ app.get("/destroyVm", async (req, res) => {
     }
     const owner = ownerParam ? ownerParam : tokens[0]
     const repoName = repoNameParam ? repoNameParam : tokens[1].slice(0, -4);
-    // const deploymentCheckRunId = await createCheckRun(owner, repoName, lastCommitHash, "deployment check run", 'in_progress')
     const foldersToDelete = findFoldersWithPrefix('../vagrant', owner + "_" + repoName);
 
 
     for (const folder of foldersToDelete) {
-        if(customRepoName && folder === customRepoName) continue;
+        if (customRepoName && folder === customRepoName) continue;
         console.log("trying to destroy vm ", folder)
         const folderPath = `../vagrant/${folder}`
         const destroyVmCommand = [`cd ${folderPath}`, `echo "%cd%"`, `vagrant destroy -f`];
@@ -138,7 +138,7 @@ app.get("/deploy", (req, res) => {
     } = req.query;
 
     console.log('this server received a request for deployment for: ',
-        { vmType, repoUrl, lastCommitHash, redeployment, metricsAddress, port, publicUrl, contractAddress})
+        { vmType, repoUrl, lastCommitHash, redeployment, metricsAddress, port, publicUrl, contractAddress })
 
     const response = {
         message: `Received param1: ${vmType}, param2: ${repoUrl}, param3: ${lastCommitHash}`
@@ -150,17 +150,30 @@ app.get("/deploy", (req, res) => {
         console.log("Processing parameters in the background:");
         console.log(`param1: ${vmType}, param2: ${repoUrl}, param3: ${lastCommitHash}`);
 
+        let tokens = repoUrl.split("/").filter(token => token !== "");
+        tokens = tokens.slice(-2);
+        const owner = tokens[0]
+        const repoName = tokens[1].slice(0, -4);
+        let checkRunName = "deployment check run"
+        const deploymentCheckRunId = await createCheckRun(owner, repoName, lastCommitHash, checkRunName, 'in_progress')
 
-        if (vmType === 'container') {
-            handleContainerDeploy(repoUrl, lastCommitHash, port, redeployment, metricsAddress);
-        } else {
-            handleVmDeploy(vmType, repoUrl, lastCommitHash, port, redeployment, metricsAddress, publicUrl, contractAddress);
+
+        try {
+
+            if (vmType === 'container') {
+                await handleContainerDeploy(repoUrl, lastCommitHash, port, redeployment, metricsAddress, deploymentCheckRunId);
+            } else {
+                await handleVmDeploy(vmType, repoUrl, lastCommitHash, port, redeployment, metricsAddress, publicUrl, contractAddress, deploymentCheckRunId);
+            }
+        } catch (err) {
+            await failureCheckRun(owner, repoName, deploymentCheckRunId)
         }
+
 
     }, 0);
 });
 
-const handleContainerDeploy = async (repoUrl, lastCommitHash, port, redeployment, metricsAddress) => {
+const handleContainerDeploy = async (repoUrl, lastCommitHash, port, redeployment, metricsAddress, deploymentCheckRunId) => {
     let tokens = repoUrl.split("/").filter(token => token !== "");
     tokens = tokens.slice(-2);
     const owner = tokens[0]
@@ -169,7 +182,6 @@ const handleContainerDeploy = async (repoUrl, lastCommitHash, port, redeployment
     if (redeployment && redeployment === true) {
         checkRunName = "redeployment"
     }
-    const deploymentCheckRunId = await createCheckRun(owner, repoName, lastCommitHash, checkRunName, 'in_progress')
     const customRepoName = owner + "_" + repoName + "_" + lastCommitHash
     const foldersToDelete = findFoldersWithPrefix('../vagrant', owner + "_" + repoName);
     const hostName = customRepoName.replace(/_/g, '-')
@@ -198,6 +210,7 @@ const handleContainerDeploy = async (repoUrl, lastCommitHash, port, redeployment
 
 
     await updateCheckRun(owner, repoName, deploymentCheckRunId, 'in_progress')
+    await updateCheckRun(owner, repoName, deploymentCheckRunId, 'in_progress')
     const containerName = customRepoName
     const image = "beiuhori07/integrity-check"
     const hostPort = await runContainer(image, containerName, port);
@@ -213,8 +226,11 @@ const handleContainerDeploy = async (repoUrl, lastCommitHash, port, redeployment
             await sleep(1000);
         }
         console.log("public url", publicURL)
+    } else {
+        // todo: failed deployment
     }
 
+    await completeCheckRun(owner, repoName, deploymentCheckRunId, publicURL + "/log-timestamp")
     await completeCheckRun(owner, repoName, deploymentCheckRunId, publicURL + "/log-timestamp")
     const serviceToRegister = {
         Name: customRepoName,
@@ -286,7 +302,7 @@ const handleContainerDeploy = async (repoUrl, lastCommitHash, port, redeployment
     }
 }
 
-const handleVmDeploy = async (vmType, repoUrl, lastCommitHash, port, redeployment, metricsAddress, blockchainPublicUrl, contractAddress) => {
+const handleVmDeploy = async (vmType, repoUrl, lastCommitHash, port, redeployment, metricsAddress, blockchainPublicUrl, contractAddress, deploymentCheckRunId) => {
     // check if a folder exists - to delete it later after new one is up and running
 
     let tokens = repoUrl.split("/").filter(token => token !== "");
@@ -297,7 +313,6 @@ const handleVmDeploy = async (vmType, repoUrl, lastCommitHash, port, redeploymen
     if (redeployment && redeployment === true) {
         checkRunName = "redeployment"
     }
-    const deploymentCheckRunId = await createCheckRun(owner, repoName, lastCommitHash, checkRunName, 'in_progress')
     const customRepoName = owner + "_" + repoName + "_" + lastCommitHash
     const foldersToDelete = findFoldersWithPrefix('../vagrant', owner + "_" + repoName);
     const customPath = path.join("../vagrant", customRepoName);
@@ -572,7 +587,7 @@ function createFolderSync(folderName) {
         }
     } catch (err) {
         console.error("An error occurred while creating the folder:", err);
-
+        throw err
         // todo: run the check run status as failed here
     }
 }
@@ -594,7 +609,7 @@ function createJsonFile(filePath, data) {
         console.log(`File "${filePath}" created successfully.`);
     } catch (err) {
         console.error("An error occurred while creating the JSON file:", err);
-
+        throw err
         // todo: run the check run status as failed heree
     }
 }
@@ -802,6 +817,29 @@ async function updateCheckRun(owner, repo, check_run_id, new_status) {
     }
 }
 
+async function failureCheckRun(owner, repo, check_run_id) {
+
+    console.log('about to update check run to status: failure')
+    try {
+        const response = await octokit.checks.update({
+            owner: owner,
+            repo: repo,
+            check_run_id: check_run_id,
+            completed_at: new Date(),
+            conclusion: 'failure',
+            output: {
+                title: "Deployment",
+                summary: "deployment failed",
+                text: "an error occured in the process"
+            }
+        });
+
+        console.log('Check Run updated successfully - status: ', response.data.status);
+    } catch (error) {
+        console.error('Error updating Check Run:', error);
+    }
+}
+
 async function completeCheckRun(owner, repo, check_run_id, message) {
 
     try {
@@ -843,6 +881,7 @@ async function registerAgentService(requestBody) {
         return true;
     } catch (error) {
         console.error('Error fetching services:', error);
+        throw error;
     }
 }
 
