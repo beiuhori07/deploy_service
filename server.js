@@ -16,16 +16,15 @@ dotenv.config();
 const BufferB = Buffer.Buffer;
 const privateKey = BufferB.from(process.env.GITHUB_PRIVATE_KEY, 'base64').toString('utf8');
 
-// const CONSUL_BASE_URL = "http://192.168.0.165:8500" // todo: static ip - read it somehow?
-const CONSUL_BASE_URL = "http://192.168.0.199:8500" // todo: static ip - read it somehow?
-const BROADCAST_ADDR = "192.168.0.255";
+const CONSUL_BASE_URL = "http://192.168.0.165:8500" // todo: static ip - this is the ip for the consul server
+const BROADCAST_ADDR = "192.168.0.255"; // its broadcast address
 
 
 import { Octokit } from "@octokit/rest";
 import { createAppAuth } from "@octokit/auth-app";
 
-const appId = '890986'; // Replace with your GitHub App's ID
-const installationId = '50355540'; // Replace with installation ID for the repository
+const appId = '890986'; 
+const installationId = '50355540'; 
 
 const octokit = new Octokit({
     authStrategy: createAppAuth,
@@ -54,18 +53,9 @@ app.listen(PORT, () => {
 ////            TODO
 /////////////////////////////////////////////////////////
 
-
-
-// error/failure check-run update on exceptions thrown
-
-
-
-// cleanup pipeline script
+// refactoring and some splitting of concers
 // better error handling - try/catches
 
-
-
-// todo: redeployment async/await not working - deployments may start before the whole destruction of vms
 
 app.get("/health", async (req, res) => {
 
@@ -194,10 +184,8 @@ const handleContainerDeploy = async (repoUrl, lastCommitHash, port, redeployment
 
     let bridge = "";
     let serverIp = "";
-    // todo: to test on both oses
     if (os.platform() === 'win32') {
-        //todo: find the command for cmd as well
-        //atm it works like this but not really safe
+        // its a requirement that servers run on linux
         bridge = "";
     } else {
         const getNetInferfaceNameCommand = `ip -4 addr | grep -B2 "brd ${BROADCAST_ADDR}" | grep -oP '^\\d: \\K[^:]+'`
@@ -226,9 +214,7 @@ const handleContainerDeploy = async (repoUrl, lastCommitHash, port, redeployment
             await sleep(1000);
         }
         console.log("public url", publicURL)
-    } else {
-        // todo: failed deployment
-    }
+    } 
 
     await completeCheckRun(owner, repoName, deploymentCheckRunId, publicURL + "/log-timestamp")
     await completeCheckRun(owner, repoName, deploymentCheckRunId, publicURL + "/log-timestamp")
@@ -262,7 +248,6 @@ const handleContainerDeploy = async (repoUrl, lastCommitHash, port, redeployment
         deleteFolder(folderPath)
     }
 
-    // todo: destroy an deregister(done inside /destroyVm) app versions on other servers
     const registeredVMAppsObject = await getServiceByTag("app-vm");
     const registeredVMApps = Object.keys(registeredVMAppsObject);
     const previousVMVersionsOnOtherServers = registeredVMApps.filter(app => app.startsWith(owner + "_" + repoName) && app !== customRepoName)
@@ -281,7 +266,7 @@ const handleContainerDeploy = async (repoUrl, lastCommitHash, port, redeployment
         }
 
     }
-    // todo: same for containers
+
     const registeredContainerAppsObject = await getServiceByTag("app-container");
     const registeredContainerApps = Object.keys(registeredContainerAppsObject);
     const previousContainerVersionsOnOtherServers = registeredContainerApps.filter(app => app.startsWith(owner + "_" + repoName) && app !== customRepoName)
@@ -303,7 +288,6 @@ const handleContainerDeploy = async (repoUrl, lastCommitHash, port, redeployment
 }
 
 const handleVmDeploy = async (vmType, repoUrl, lastCommitHash, port, redeployment, metricsAddress, blockchainPublicUrl, contractAddress, deploymentCheckRunId) => {
-    // check if a folder exists - to delete it later after new one is up and running
 
     let tokens = repoUrl.split("/").filter(token => token !== "");
     tokens = tokens.slice(-2);
@@ -318,7 +302,6 @@ const handleVmDeploy = async (vmType, repoUrl, lastCommitHash, port, redeploymen
     const customPath = path.join("../vagrant", customRepoName);
     createFolderSync(customPath)
 
-    // copy template config files there? actually create them and include the vmtype and repourl in the config.json
 
     const hostName = customRepoName.replace(/_/g, '-')
 
@@ -329,10 +312,8 @@ const handleVmDeploy = async (vmType, repoUrl, lastCommitHash, port, redeploymen
 
     let bridge = "";
     let serverIp = "";
-    // todo: to test on both oses
     if (os.platform() === 'win32') {
-        //todo: find the command for cmd as well
-        //atm it works like this but not really safe
+        // servers should run on linux
         bridge = "";
     } else {
         const getNetInferfaceNameCommand = `ip -4 addr | grep -B2 "brd ${BROADCAST_ADDR}" | grep -oP '^\\d: \\K[^:]+'`
@@ -358,7 +339,6 @@ const handleVmDeploy = async (vmType, repoUrl, lastCommitHash, port, redeploymen
     createJsonFile(filePath, configData)
 
 
-    // then actually copy the template for a vagrantfile of the given vm type
 
 
     let templateSrcPath;
@@ -372,7 +352,6 @@ const handleVmDeploy = async (vmType, repoUrl, lastCommitHash, port, redeploymen
     await copyFile(templateSrcPath, templateDestPath)
 
 
-    // run the vagrantfile
 
 
     await updateCheckRun(owner, repoName, deploymentCheckRunId, 'in_progress')
@@ -412,7 +391,6 @@ const handleVmDeploy = async (vmType, repoUrl, lastCommitHash, port, redeploymen
         deleteFolder(folderPath)
     }
 
-    // todo: destroy an deregister(done inside /destroyVm) app versions on other servers
     const registeredAppsObject = await getServiceByTag("app-vm");
     const registeredApps = Object.keys(registeredAppsObject);
     const previousVersionsOnOtherServers = registeredApps.filter(app => app.startsWith(owner + "_" + repoName) && app !== customRepoName)
@@ -425,14 +403,13 @@ const handleVmDeploy = async (vmType, repoUrl, lastCommitHash, port, redeploymen
             const destroyParams = {
                 ownerParam: owner,
                 repoNameParam: repoName,
-                customRepoName: customRepoName // todo: test this case also for containers - delete a prev version that waas on the same ip 
+                customRepoName: customRepoName  
             }
             console.log("about to make destroy call at ", prevVersionServerIp.serverIp)
             const data = await destroy(`http://${prevVersionServerIp.serverIp}:3001/destroyVm`, destroyParams)
         }
 
     }
-    // todo: same for containers
     const registeredContainerAppsObject = await getServiceByTag("app-container");
     const registeredContainerApps = Object.keys(registeredContainerAppsObject);
     const previousContainerVersionsOnOtherServers = registeredContainerApps.filter(app => app.startsWith(owner + "_" + repoName) && app !== customRepoName)
@@ -582,13 +559,10 @@ function createFolderSync(folderName) {
         } else {
             console.log(`Folder "${folderName}" already exists.`);
 
-            // todo: run the check run status as failed here 
-            // todo: maybe a big exception wrapper for the failed case? 
         }
     } catch (err) {
         console.error("An error occurred while creating the folder:", err);
         throw err
-        // todo: run the check run status as failed here
     }
 }
 
@@ -621,8 +595,7 @@ function copyFile(srcPath, destPath) {
             if (err) {
                 console.error("An error occurred while copying the file:", err);
 
-                // todo: run the check run status as failed heree
-                reject(err);  // Reject the promise on error
+                reject(err);
 
             } else {
                 console.log(`File copied from "${srcPath}" to "${destPath}" successfully.`);
@@ -789,7 +762,6 @@ async function createCheckRun(owner, repo, head_sha, name, status) {
         });
 
         console.log('Check Run created successfully');
-        // console.log('check run creation response ', response.data);
         console.log('check run id ', response.data.id);
 
 

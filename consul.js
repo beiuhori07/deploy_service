@@ -77,7 +77,6 @@ export async function getServerIpByServiceName(serviceName) {
         let hosts = []
         response.data.forEach(service => {
 
-            // todo: needed here for destoying deregistering??
             // const httpCheck = service.Checks.find(check => check.CheckID === `service:${serviceName}`)
 
             hosts.push({
